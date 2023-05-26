@@ -1,34 +1,17 @@
 package controllers
 
 import (
-	"Assignment/models"
-	"Assignment/storage"
-	"fmt"
-	"math/rand"
-	"mime/multipart"
+	"log"
 	"net/http"
-	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/gin-gonic/gin"
 )
 
-var videos []models.Video
-
-func GetVideos(c *gin.Context) {
-	c.IndentedJSON(http.StatusOK, videos)
-}
-
-func GetVideosByID(c *gin.Context) {
-	ID := c.Param("id")
-	for _, v := range videos {
-		if v.ID == ID {
-			c.IndentedJSON(http.StatusOK, v)
-			return
-		}
-	}
-}
-
 func UploadVideo(c *gin.Context) {
+	// Retrieve the uploaded video file
 	file, err := c.FormFile("video")
 	if err != nil {
 		c.IndentedJSON(http.StatusBadRequest, gin.H{
@@ -36,36 +19,47 @@ func UploadVideo(c *gin.Context) {
 		})
 		return
 	}
-	videoStorage := storage.NewStorage("your-storage-path")
-	err = videoStorage.SaveVideo(file)
+
+	// Create an AWS session
+	sess, err := session.NewSession(&aws.Config{
+		Region: aws.String("eu-north-1"), // Replace with your AWS region
+	})
 	if err != nil {
-		c.IndentedJSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to save video",
-		})
-		return
+		log.Fatal(err)
 	}
-	video := models.Video{
-		ID:       generateID(),
-		Title:    c.PostForm("title"),
-		Duration: calculateDuration(file),
-		Size:     int(file.Size / 1024),
+
+	// Create an S3 service client
+	svc := s3.New(sess)
+
+	// Open the uploaded file
+	srcFile, err := file.Open()
+	if err != nil {
+		log.Fatal(err)
 	}
-	videos = append(videos, video)
+	defer srcFile.Close()
+
+	// Specify the S3 bucket and object key
+	bucket := "skikosvideo" // Replace with your S3 bucket name
+	objectKey := "videos/" + file.Filename
+
+	// Create an S3 PutObjectInput
+	input := &s3.PutObjectInput{
+		Bucket:               aws.String(bucket),
+		Key:                  aws.String(objectKey),
+		Body:                 srcFile,
+		ServerSideEncryption: aws.String("AES256"),  // Enable SSE with AES-256 encryption
+		ACL:                  aws.String("private"), // Set the desired ACL for the object
+	}
+
+	// Upload the file to S3
+	_, err = svc.PutObject(input)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Add any additional operations you need to perform with the uploaded video, such as saving metadata to a database
 
 	c.IndentedJSON(http.StatusOK, gin.H{
-		"message": "video uploaded sucessfully",
+		"message": "video uploaded successfully",
 	})
-}
-
-func generateID() string {
-	timestamp := time.Now().UnixNano()
-	randomNum := rand.Intn(1000)
-	id := fmt.Sprintf("%d%d", timestamp, randomNum)
-	return id
-}
-
-func calculateDuration(file *multipart.FileHeader) int {
-	rand.Seed(time.Now().UnixNano())
-	duration := rand.Intn(10) + 1
-	return duration
 }

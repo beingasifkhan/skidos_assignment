@@ -1,7 +1,8 @@
 package main
 
 import (
-	"Assignment/controllers"
+	"assignment_skidos/controllers"
+	"assignment_skidos/utils"
 	"fmt"
 
 	"github.com/gin-gonic/gin"
@@ -16,12 +17,12 @@ func main() {
 
 	//Videos
 	authGroup := r.Group("/api")
-	authGroup.Use(controllers.AuthMiddleware())
+	authGroup.Use(utils.AuthMiddleware())
 	{
-		authGroup.GET("/videos", controllers.GetVideos)
-		authGroup.GET("/videos/:id", controllers.GetVideosByID)
 		authGroup.POST("/videos", controllers.UploadVideo)
 	}
+	//bitrate
+	r.GET("/stream", controllers.StreamVideo)
 
 	r.Run("localhost:8080")
 	fmt.Println("server is running")
